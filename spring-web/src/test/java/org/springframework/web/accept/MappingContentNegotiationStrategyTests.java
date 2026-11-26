@@ -77,6 +77,17 @@ class MappingContentNegotiationStrategyTests {
 		assertThat(mediaTypes.get(0).toString()).isEqualTo("application/xml");
 	}
 
+	@Test
+	void resolveMediaTypesViaFactoryDoesNotAddMapping() throws Exception {
+		Map<String, MediaType> mapping = Collections.singletonMap("json", MediaType.APPLICATION_JSON);
+		TestMappingContentNegotiationStrategy strategy = new TestMappingContentNegotiationStrategy("xml", mapping);
+
+		assertThat(strategy.resolveMediaTypes(null)).containsExactly(MediaType.APPLICATION_XML);
+		assertThat(strategy.getMediaTypes()).containsOnlyKeys("json");
+		assertThat(strategy.getAllFileExtensions()).containsExactly("json");
+		assertThat(strategy.resolveFileExtensions(MediaType.APPLICATION_XML)).containsExactly("xml");
+	}
+
 
 	private static class TestMappingContentNegotiationStrategy extends AbstractMappingContentNegotiationStrategy {
 

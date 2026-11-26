@@ -49,6 +49,12 @@ public class MappingMediaTypeFileExtensionResolver implements MediaTypeFileExten
 
 	private final List<String> allFileExtensions = new CopyOnWriteArrayList<>();
 
+	/**
+	 * Reverse lookup for plain file extensions that were resolved dynamically
+	 * (i.e. not registered), kept separate from the registered mappings.
+	 */
+	private final ConcurrentMap<MediaType, CopyOnWriteArrayList<String>> resolvedFileExtensions = new ConcurrentHashMap<>(64);
+
 
 	/**
 	 * Create an instance with the given map of file extensions and media types.
@@ -86,6 +92,24 @@ public class MappingMediaTypeFileExtensionResolver implements MediaTypeFileExten
 		}
 	}
 
+	/**
+	 * Remember a dynamically resolved file extension for reverse lookups via
+	 * {@link #resolveFileExtensions}, without registering it as a mapping.
+	 * Only plain file extensions (no '.') are kept, in lower case, so the
+	 * number of entries is bounded by the known file extensions.
+	 */
+	void addResolvedFileExtension(String extension, MediaType mediaType) {
+		if (extension.indexOf('.') != -1) {
+			return;
+		}
+		String lowerCaseExtension = extension.toLowerCase(Locale.ROOT);
+		if (this.mediaTypes.containsKey(lowerCaseExtension)) {
+			return;
+		}
+		this.resolvedFileExtensions.computeIfAbsent(mediaType, key -> new CopyOnWriteArrayList<>())
+				.addIfAbsent(lowerCaseExtension);
+	}
+
 	private void addFileExtension(MediaType mediaType, String extension) {
 		this.fileExtensions.computeIfAbsent(mediaType, key -> new CopyOnWriteArrayList<>())
 				.add(extension);
@@ -95,7 +119,20 @@ public class MappingMediaTypeFileExtensionResolver implements MediaTypeFileExten
 	@Override
 	public List<String> resolveFileExtensions(MediaType mediaType) {
 		List<String> fileExtensions = this.fileExtensions.get(mediaType);
-		return (fileExtensions != null ? fileExtensions : Collections.emptyList());
+		List<String> resolved = this.resolvedFileExtensions.get(mediaType);
+		if (resolved == null || resolved.isEmpty()) {
+			return (fileExtensions != null ? fileExtensions : Collections.emptyList());
+		}
+		if (fileExtensions == null || fileExtensions.isEmpty()) {
+			return Collections.unmodifiableList(resolved);
+		}
+		List<String> result = new ArrayList<>(fileExtensions);
+		for (String extension : resolved) {
+			if (!result.contains(extension)) {
+				result.add(extension);
+			}
+		}
+		return result;
 	}
 
 	@Override

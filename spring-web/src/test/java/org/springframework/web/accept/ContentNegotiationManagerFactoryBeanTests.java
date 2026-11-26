@@ -180,6 +180,34 @@ class ContentNegotiationManagerFactoryBeanTests {
 	}
 
 	@Test
+	void favorParameterDoesNotAddMappingsForResolvedMediaTypes() throws Exception {
+		this.factoryBean.setFavorParameter(true);
+		this.factoryBean.setUseRegisteredExtensionsOnly(false);
+		this.factoryBean.addMediaType("json", MediaType.APPLICATION_JSON);
+		this.factoryBean.afterPropertiesSet();
+		ContentNegotiationManager manager = this.factoryBean.getObject();
+
+		this.servletRequest.setRequestURI("/flower");
+		for (String format : Arrays.asList("xml", "XML", "xMl", "a.xml", "b.XML")) {
+			this.servletRequest.setParameter("format", format);
+			assertThat(manager.resolveMediaTypes(this.webRequest)).containsExactly(MediaType.APPLICATION_XML);
+		}
+		for (int i = 0; i < 100; i++) {
+			this.servletRequest.setParameter("format", "file" + i + ".xml");
+			assertThat(manager.resolveMediaTypes(this.webRequest)).containsExactly(MediaType.APPLICATION_XML);
+		}
+
+		assertThat(manager.getMediaTypeMappings()).containsOnlyKeys("json");
+		assertThat(manager.getAllFileExtensions()).containsExactly("json");
+		assertThat(manager.resolveFileExtensions(MediaType.APPLICATION_XML)).containsExactly("xml");
+
+		this.servletRequest.setParameter("format", "invalid");
+		assertThatExceptionOfType(HttpMediaTypeNotAcceptableException.class)
+				.isThrownBy(() -> manager.resolveMediaTypes(this.webRequest))
+				.satisfies(ex -> assertThat(ex.getSupportedMediaTypes()).containsExactly(MediaType.APPLICATION_JSON));
+	}
+
+	@Test
 	@SuppressWarnings("deprecation")
 	void mediaTypeMappingsWithoutPathAndParameterStrategies() {
 		this.factoryBean.setFavorPathExtension(false);
