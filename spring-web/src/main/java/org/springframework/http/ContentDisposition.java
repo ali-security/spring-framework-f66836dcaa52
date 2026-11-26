@@ -70,6 +70,7 @@ public final class ContentDisposition {
 		PRINTABLE.set(34, false); // "
 		PRINTABLE.set(61, false); // =
 		PRINTABLE.set(63, false); // ?
+		PRINTABLE.set(92, false); // \
 		PRINTABLE.set(95, false); // _
 	}
 
@@ -257,12 +258,12 @@ public final class ContentDisposition {
 		}
 		if (this.name != null) {
 			sb.append("; name=\"");
-			sb.append(this.name).append('\"');
+			appendName(sb, this.name).append('\"');
 		}
 		if (this.filename != null) {
 			if (this.charset == null || StandardCharsets.US_ASCII.equals(this.charset)) {
 				sb.append("; filename=\"");
-				sb.append(encodeQuotedPairs(this.filename)).append('\"');
+				appendName(sb, this.filename).append('\"');
 			}
 			else {
 				sb.append("; filename=\"");
@@ -360,7 +361,7 @@ public final class ContentDisposition {
 						part.substring(eqIndex + 2, part.length() - 1) :
 						part.substring(eqIndex + 1));
 				if (attribute.equals("name") ) {
-					name = value;
+					name = (value.indexOf('\\') != -1 ? decodeQuotedPairs(value) : value);
 				}
 				else if (attribute.equals("filename*") ) {
 					int idx1 = value.indexOf('\'');
@@ -612,19 +613,20 @@ public final class ContentDisposition {
 		return PRINTABLE.get(b);
 	}
 
-	private static String encodeQuotedPairs(String filename) {
-		if (filename.indexOf('"') == -1 && filename.indexOf('\\') == -1) {
-			return filename;
-		}
-		StringBuilder sb = new StringBuilder();
-		for (int i = 0; i < filename.length() ; i++) {
-			char c = filename.charAt(i);
-			if (c == '"' || c == '\\') {
-				sb.append('\\');
+	private static StringBuilder appendName(StringBuilder buffer, String name) {
+		for (int i = 0; i < name.length() ; i++) {
+			char c = name.charAt(i);
+			// strip control characters
+			if (c <= 0x1F || c == 0x7F) {
+				continue;
 			}
-			sb.append(c);
+			// encode quoted pairs
+			if (c == '"' || c == '\\') {
+				buffer.append('\\');
+			}
+			buffer.append(c);
 		}
-		return sb.toString();
+		return buffer;
 	}
 
 	private static String decodeQuotedPairs(String filename) {

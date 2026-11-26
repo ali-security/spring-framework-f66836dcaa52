@@ -393,6 +393,18 @@ class HttpHeadersTests {
 		assertThat(headers.getContentDisposition()).as("Invalid Content-Disposition header").isEqualTo(disposition);
 	}
 
+	@Test
+	void contentDispositionWithControlCharacters() {
+		headers.setContentDisposition(ContentDisposition.attachment()
+				.filename("foo.txt\r\nSet-Cookie: session=evil").build());
+		assertThat(headers.getFirst(HttpHeaders.CONTENT_DISPOSITION))
+				.isEqualTo("attachment; filename=\"foo.txtSet-Cookie: session=evil\"");
+
+		headers.setContentDispositionFormData("foo\r\nX-Injected: evil", "bar\".txt\n");
+		assertThat(headers.getFirst(HttpHeaders.CONTENT_DISPOSITION))
+				.isEqualTo("form-data; name=\"fooX-Injected: evil\"; filename=\"bar\\\".txt\"");
+	}
+
 	@Test  // SPR-11917
 	void getAllowEmptySet() {
 		headers.setAllow(Collections.emptySet());

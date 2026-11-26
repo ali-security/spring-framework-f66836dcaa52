@@ -35,6 +35,7 @@ import org.apache.tomcat.util.http.fileupload.UploadContext;
 import org.apache.tomcat.util.http.fileupload.disk.DiskFileItemFactory;
 import org.junit.jupiter.api.Test;
 
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpEntity;
@@ -374,6 +375,47 @@ class FormHttpMessageConverterTests {
 		parameters = outputMessage.getHeaders().getContentType().getParameters();
 		assertThat(parameters).containsOnlyKeys("boundary", "charset");
 		assertThat(parameters).containsEntry("charset", "ISO-8859-1");
+	}
+
+	@Test
+	void writeMultipartWithControlCharactersInPartNameAndFilename() throws Exception {
+		MultiValueMap<String, Object> parts = new LinkedMultiValueMap<>();
+		parts.add("text\r\nX-Injected: evil", "value");
+		Resource resource = new ByteArrayResource("content".getBytes(StandardCharsets.UTF_8)) {
+			@Override
+			public String getFilename() {
+				return "file.txt\r\nContent-Type: text/html\r\n\r\n<script>";
+			}
+		};
+		parts.add("file\"; filename=\"evil.sh", resource);
+
+		MockHttpOutputMessage outputMessage = new MockHttpOutputMessage();
+		this.converter.write(parts, MULTIPART_FORM_DATA, outputMessage);
+
+		String body = outputMessage.getBodyAsString(StandardCharsets.UTF_8);
+		assertThat(body).doesNotContain("\r\nX-Injected", "\r\nContent-Type: text/html", "\r\n<script>");
+		assertThat(body).contains("Content-Disposition: form-data; name=\"textX-Injected: evil\"\r\n");
+		assertThat(body).contains("Content-Disposition: form-data; " +
+				"name=\"file\\\"; filename=\\\"evil.sh\"; " +
+				"filename=\"file.txtContent-Type: text/html<script>\"\r\n");
+
+		// see if Commons FileUpload can read what we wrote
+		FileUpload fileUpload = new FileUpload();
+		fileUpload.setFileItemFactory(new DiskFileItemFactory());
+		RequestContext requestContext = new MockHttpOutputMessageRequestContext(outputMessage);
+		List<FileItem> items = fileUpload.parseRequest(requestContext);
+		assertThat(items).hasSize(2);
+
+		FileItem item = items.get(0);
+		assertThat(item.isFormField()).isTrue();
+		assertThat(item.getHeaders().getHeader("X-Injected")).isNull();
+		assertThat(item.getString()).isEqualTo("value");
+
+		item = items.get(1);
+		assertThat(item.isFormField()).isFalse();
+		assertThat(item.getName()).isEqualTo("file.txtContent-Type: text/html<script>");
+		assertThat(item.getContentType()).isNotEqualTo("text/html");
+		assertThat(item.getString()).isEqualTo("content");
 	}
 
 	private void assertCanRead(MediaType mediaType) {

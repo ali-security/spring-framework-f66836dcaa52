@@ -162,6 +162,15 @@ class ContentDispositionTests {
 	}
 
 	@Test
+	void parseBackslashInName() {
+		String s = "form-data; name=\"foo\\\"bar\"; filename=\"foo.txt\"";
+		ContentDisposition cd = ContentDisposition.parse(s);
+		assertThat(cd.getName()).isEqualTo("foo\"bar");
+		assertThat(cd.getFilename()).isEqualTo("foo.txt");
+		assertThat(cd.toString()).isEqualTo(s);
+	}
+
+	@Test
 	void parseBackslashInLastPosition() {
 		ContentDisposition cd = ContentDisposition.parse("form-data; name=\"foo\"; filename=\"bar\\\"");
 		assertThat(cd.getName()).isEqualTo("foo");
@@ -310,6 +319,64 @@ class ContentDispositionTests {
 		String filename = "\"中文.txt";
 		assertThat(ContentDisposition.formData().filename(filename, StandardCharsets.UTF_8).build().toString())
 				.isEqualTo("form-data; filename=\"=?UTF-8?Q?=22=E4=B8=AD=E6=96=87.txt?=\"; filename*=UTF-8''%22%E4%B8%AD%E6%96%87.txt");
+	}
+
+	@Test
+	void formatWithNameWithQuotes() {
+		ContentDisposition cd = ContentDisposition.formData().name("foo\"; filename=\"evil.sh").build();
+		assertThat(cd.toString()).isEqualTo("form-data; name=\"foo\\\"; filename=\\\"evil.sh\"");
+		ContentDisposition parsed = ContentDisposition.parse(cd.toString());
+		assertThat(parsed.getName()).isEqualTo("foo\"; filename=\"evil.sh");
+		assertThat(parsed.getFilename()).isNull();
+
+		cd = ContentDisposition.formData().name("foo\\").filename("bar.txt").build();
+		assertThat(cd.toString()).isEqualTo("form-data; name=\"foo\\\\\"; filename=\"bar.txt\"");
+		parsed = ContentDisposition.parse(cd.toString());
+		assertThat(parsed.getName()).isEqualTo("foo\\");
+		assertThat(parsed.getFilename()).isEqualTo("bar.txt");
+	}
+
+	@Test
+	void formatStripsControlCharactersInName() {
+		String header = ContentDisposition.formData()
+				.name("foo\r\nX-Injected: evil\u0000\t\u001F\u007F")
+				.filename("bar.txt")
+				.build().toString();
+		assertThat(header).isEqualTo("form-data; name=\"fooX-Injected: evil\"; filename=\"bar.txt\"");
+		assertThat(header).doesNotContain("\r", "\n");
+	}
+
+	@Test
+	void formatStripsControlCharactersInFilename() {
+		BiConsumer<String, String> tester = (input, output) -> {
+			assertThat(ContentDisposition.attachment().filename(input).build().toString())
+					.isEqualTo("attachment; filename=\"" + output + "\"");
+			assertThat(ContentDisposition.attachment().filename(input, StandardCharsets.US_ASCII).build().toString())
+					.isEqualTo("attachment; filename=\"" + output + "\"");
+		};
+
+		tester.accept("foo.txt\r\nSet-Cookie: session=evil", "foo.txtSet-Cookie: session=evil");
+		tester.accept("foo\r.txt", "foo.txt");
+		tester.accept("foo\n.txt", "foo.txt");
+		tester.accept("foo\t.txt", "foo.txt");
+		tester.accept("\u0000foo\u001F.txt\u007F", "foo.txt");
+		tester.accept("foo\r\n\".txt", "foo\\\".txt");
+		tester.accept("foo\r\n\\.txt", "foo\\\\.txt");
+	}
+
+	@Test
+	void formatWithEncodedFilenameWithControlCharactersQuotesAndBackslash() {
+		String filename = "中\r\n\"\\文.txt";
+		String header = ContentDisposition.attachment()
+				.filename(filename, StandardCharsets.UTF_8)
+				.build().toString();
+		assertThat(header).isEqualTo("attachment; " +
+				"filename=\"=?UTF-8?Q?=E4=B8=AD=0D=0A=22=5C=E6=96=87.txt?=\"; " +
+				"filename*=UTF-8''%E4%B8%AD%0D%0A%22%5C%E6%96%87.txt");
+		assertThat(header).doesNotContain("\r", "\n");
+
+		String[] parts = header.split("; ");
+		assertThat(ContentDisposition.parse(parts[0] + "; " + parts[1]).getFilename()).isEqualTo(filename);
 	}
 
 	@Test
