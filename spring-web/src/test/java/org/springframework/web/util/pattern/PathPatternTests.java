@@ -32,6 +32,7 @@ import org.springframework.web.util.pattern.PathPattern.PathRemainingMatchInfo;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 
 /**
  * Exercise matching of {@link PathPattern} objects.
@@ -902,6 +903,26 @@ class PathPatternTests {
 		assertThatIllegalArgumentException().isThrownBy(() ->
 				matchAndExtract(pathPattern,"/web/foobar_goo"))
 			.withMessageContaining("The number of capturing groups in the pattern");
+	}
+
+	@Test
+	void captureVariableRegexWithTooManyCharacterAccessAttempts() {
+		PathPattern pathPattern = new PathPatternParser().parse("/{x:(?:.*a){12}b}");
+		assertThat(pathPattern.toChainString()).isEqualTo("Separator(/) CaptureVariable({x:(?:.*a){12}b})");
+		assertThat(pathPattern.matches(toPathContainer("/" + "a".repeat(28) + "b"))).isTrue();
+		assertThatIllegalStateException()
+				.isThrownBy(() -> pathPattern.matches(toPathContainer("/" + "a".repeat(28) + "c")))
+				.withMessage("Too many character access attempts encountered during pattern matching");
+	}
+
+	@Test
+	void regexWithTooManyCharacterAccessAttempts() {
+		PathPattern pathPattern = new PathPatternParser().parse("/{x:(?:.*a){12}b}*");
+		assertThat(pathPattern.toChainString()).isEqualTo("Separator(/) Regex({x:(?:.*a){12}b}*)");
+		assertThat(pathPattern.matches(toPathContainer("/" + "a".repeat(28) + "b"))).isTrue();
+		assertThatIllegalStateException()
+				.isThrownBy(() -> pathPattern.matches(toPathContainer("/" + "a".repeat(28) + "c")))
+				.withMessage("Too many character access attempts encountered during pattern matching");
 	}
 
 	@Test
